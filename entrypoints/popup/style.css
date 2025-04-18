@@ -1,0 +1,390 @@
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: light dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #242424;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+
+  --primary-color: #4a6bff;
+  --primary-hover: #3451d1;
+  --border-color: #555;
+  --input-bg: #f3f5f7;
+  --input-text: #333;
+  --result-bg: rgba(255, 255, 255, 0.08);
+  --result-border: rgba(255, 255, 255, 0.2);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --input-bg: #2a2a2a;
+    --input-text: rgba(255, 255, 255, 0.87);
+    --result-bg: rgba(255, 255, 255, 0.08);
+    --result-border: rgba(255, 255, 255, 0.2);
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --result-bg: rgba(0, 0, 0, 0.03);
+    --result-border: rgba(0, 0, 0, 0.1);
+  }
+}
+
+a {
+  font-weight: 500;
+  color: #646cff;
+  text-decoration: inherit;
+}
+a:hover {
+  color: #535bf2;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  place-items: start;
+  min-width: 100%;
+  width: 400px;
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 3.2em;
+  line-height: 1.1;
+}
+
+#app {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #54bc4ae0);
+}
+.logo.vanilla:hover {
+  filter: drop-shadow(0 0 2em #3178c6aa);
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: #1a1a1a;
+  cursor: pointer;
+  transition: border-color 0.25s;
+}
+button:hover {
+  border-color: #646cff;
+}
+button:focus,
+button:focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #213547;
+    background-color: #ffffff;
+  }
+  a:hover {
+    color: #747bff;
+  }
+  button {
+    background-color: #f9f9f9;
+  }
+}
+
+/* --------------------------------------------------
+   Groq Text Editor – Enhanced Styles
+   -------------------------------------------------- */
+
+/* Container */
+#app {
+  max-width: 420px;
+  padding: 1.25rem;
+  text-align: left;
+}
+
+body {
+  place-items: start;
+}
+
+h1 {
+  font-size: 1.75rem;
+  margin: 0 0 1rem;
+  text-align: center;
+}
+
+/* --------------------------------------------------
+   Config / Settings Section
+   -------------------------------------------------- */
+.config-section {
+  margin-bottom: 1.25rem;
+  width: 100%;
+}
+
+.config-section details {
+  border: 1px solid var(--border-color, #555);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  background-color: rgba(255, 255, 255, 0.05);
+  /* Always show content, no collapsing */
+  open: true;
+}
+
+.config-section summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.config-section input,
+.config-section select {
+  width: 100%;
+  margin: 0.35rem 0;
+  padding: 0.45rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid var(--border-color, #777);
+  background-color: var(--input-bg);
+  color: var(--input-text);
+  box-sizing: border-box;
+}
+
+/* --------------------------------------------------
+   Direct‑input / Saved prompt controls
+   -------------------------------------------------- */
+.custom-prompt {
+  margin-bottom: 1.25rem;
+  width: 100%;
+}
+
+.custom-prompt .direct-input label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  user-select: none;
+}
+
+#directInputText {
+  display: none;
+  width: 100%;
+  min-height: 110px;
+  margin-top: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 4px;
+  border: 1px solid var(--border-color, #777);
+  background-color: var(--input-bg);
+  color: var(--input-text);
+  box-sizing: border-box;
+}
+
+#directInputText.show {
+  display: block;
+}
+
+.prompt-controls {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  width: 100%;
+  align-items: center;
+}
+
+.prompt-controls select {
+  flex: 1 1 auto;
+  background-color: var(--input-bg);
+  color: var(--input-text);
+  width: 100%;
+  margin: 0.35rem 0;
+  padding: 0.45rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid var(--border-color, #777);
+  background-color: var(--input-bg);
+  color: var(--input-text);
+  box-sizing: border-box;
+}
+
+.prompt-controls button {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.prompt-controls button:hover {
+  background-color: var(--primary-hover);
+  border-color: white;
+}
+
+/* --------------------------------------------------
+   Main action buttons
+   -------------------------------------------------- */
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+  justify-content: center;
+  width: 100%;
+}
+
+.buttons button {
+  flex: 1 1 calc(50% - 0.5rem);
+  min-width: 140px;
+  background-color: var(--primary-color);
+  color: white;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.buttons button:hover {
+  background-color: var(--primary-hover);
+  border-color: white;
+}
+
+/* --------------------------------------------------
+   Result area
+   -------------------------------------------------- */
+.result-container {
+  width: 100%;
+  margin-bottom: 1rem;
+}
+
+.result-title {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+#result {
+  background-color: var(--result-bg);
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--result-border);
+  max-height: 240px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.loading {
+  text-align: center;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.6;
+  }
+}
+
+/* --------------------------------------------------
+   Custom prompts management
+   -------------------------------------------------- */
+.custom-prompts {
+  display: none;
+  margin-top: 1.5rem;
+  width: 100%;
+}
+
+.custom-prompts.show {
+  display: block;
+}
+
+.saved-prompt {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: rgba(255, 255, 255, 0.05);
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.saved-prompt-name {
+  font-weight: 600;
+}
+
+.saved-prompt-actions button {
+  margin-left: 0.25rem;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.75rem;
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.saved-prompt-actions button:hover {
+  background-color: var(--primary-hover);
+}
+
+/* Prompt creation form */
+.prompt-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.prompt-form input,
+.prompt-form textarea,
+.prompt-form select {
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border-radius: 4px;
+  border: 1px solid var(--border-color, #777);
+  background-color: var(--input-bg);
+  color: var(--input-text);
+  box-sizing: border-box;
+}
+
+.prompt-form button {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.prompt-form button:hover {
+  background-color: var(--primary-hover);
+}
+
+/* --------------------------------------------------
+   Misc
+   -------------------------------------------------- */
+.settings-link {
+  margin-top: 1rem;
+  text-align: center;
+}
+
+.settings-link a {
+  font-size: 0.9rem;
+}
