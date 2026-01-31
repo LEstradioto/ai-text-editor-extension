@@ -1,28 +1,49 @@
 import './style.css';
 import { storage } from '#imports';
+import {
+  callChatCompletion,
+  fetchModels,
+  type ChatMessage,
+  type LlmModel
+} from '../../lib/llm';
+import {
+  DEFAULT_PROVIDER,
+  PROVIDERS,
+  getProviderBaseUrl,
+  getProviderModel,
+  type ProviderId,
+  type ProviderSettingsMap
+} from '../../lib/providers';
+import { ACTION_PROMPTS, SYSTEM_PROMPTS, type Action } from '../../lib/prompts';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
-    <h1>Groq Text Editor</h1>
+    <h1>AI Text Editor</h1>
     <div class="config-section">
       <details>
         <summary>API & Model Settings</summary>
-        <input type="password" id="apiKey" placeholder="Groq API Key">
-        <select id="model">
-          <option value="deepseek-r1-distill-llama-70b">DeepSeek R1 Distill LLaMA 70B</option>
-          <option value="distil-whisper-large-v3-en">Distil Whisper Large v3 EN</option>
-          <option value="gemma2-9b-it">Gemma2 9B</option>
-          <option value="llama-3.3-70b-versatile">LLaMA 3.3 70B Versatile</option>
-          <option value="llama-3.3-70b-specdec">LLaMA 3.3 70B SpecDec</option>
-          <option value="llama-3.2-1b-preview">LLaMA 3.2 1B Preview</option>
-          <option value="llama-3.2-3b-preview">LLaMA 3.2 3B Preview</option>
-          <option value="llama-3.1-8b-instant">LLaMA 3.1 8B Instant</option>
-          <option value="llama-guard-3-8b">LLaMA Guard 3 8B</option>
-          <option value="llama3-70b-8192">LLaMA3 70B</option>
-          <option value="llama3-8b-8192">LLaMA3 8B</option>
-          <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
-          <option value="whisper-large-v3">Whisper Large v3</option>
-          <option value="whisper-large-v3-turbo">Whisper Large v3 Turbo</option>
+        <select id="provider">
+          <option value="groq">Groq</option>
+          <option value="openai">OpenAI</option>
+          <option value="openai-compatible">OpenAI-compatible (Local)</option>
         </select>
+        <input type="text" id="baseUrl" placeholder="Base URL (https://.../v1)">
+        <div class="field-error" id="baseUrlError"></div>
+        <input type="password" id="apiKey" placeholder="API Key (not required for local)">
+        <div class="field-error" id="apiKeyError"></div>
+        <select id="modelSelect"></select>
+        <input type="text" id="modelInput" placeholder="Custom model ID">
+        <div class="field-error" id="modelError"></div>
+        <div class="behavior-settings">
+          <label>
+            <input type="checkbox" id="autoOpenPopup">
+            Auto-open popup on shortcut
+          </label>
+          <label>
+            <input type="checkbox" id="autoCopyResult">
+            Auto-copy results
+          </label>
+        </div>
+        <div class="settings-status" id="settingsStatus"></div>
         <button id="saveSettings">Save Settings</button>
       </details>
     </div>
@@ -43,7 +64,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       </div>
     </div>
     <div class="buttons">
-      <button id="fix-grammar">Fix Grammar</button>
+      <button id="fix-grammar">Fix Typos Only</button>
       <button id="improve">Improve Writing</button>
       <button id="professional">Make Professional</button>
       <button id="simplify">Simplify</button>
@@ -58,6 +79,10 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     <div class="result-container">
       <div class="result-title">Results:</div>
       <div id="result"></div>
+      <div class="result-actions">
+        <button id="copyResult" class="secondary">Copy</button>
+        <button id="replaceResult" class="secondary">Replace Selection</button>
+      </div>
     </div>
     <div class="custom-prompts">
       <h3>Manage Custom Prompts</h3>
@@ -79,57 +104,26 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     </div>
 `;
 
-const API_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
-
-// System prompts for different actions
-const SYSTEM_PROMPTS = {
-  'fix-grammar': 'You are a professional editor. Fix grammar, spelling, and punctuation errors while preserving the original meaning. Return only the corrected text without explanations or formatting.',
-  'improve': 'You are a writing enhancement assistant. Improve clarity, flow, and overall writing quality while maintaining the original message. Return only the improved text without explanations or formatting.',
-  'professional': 'You are a professional writing expert. Make text more formal and suitable for business communication. Return only the modified text without explanations or formatting.',
-  'simplify': 'You are a clarity expert. Make complex text easier to understand while preserving key information. Return only the simplified text without explanations or formatting.',
-  'summarize': 'You are a summarization expert. Condense text while retaining important information. Return only the summary without explanations or formatting.',
-  'expand': 'You are a content development expert. Expand text with relevant details while maintaining consistency. Return only the expanded text without explanations or formatting.',
-  'bullets': 'You are a formatting specialist. Convert text into clear bullet points while preserving information. Return only the bullet points without explanations or additional formatting.',
-  'variations': 'You are a creative writing expert. Generate three distinct variations of the text, maintaining the core message. Return only the variations labeled as 1, 2, and 3, without explanations.',
-  'better-way': 'Is there a better way of saying this?',
-  'explain': 'Explain this please, what user would like to mean with this sentence?',
-  'tweet': 'Make it like a professional tweet, not too formal, not too nice'
-};
-
-// Action descriptions for generating prompts
-const ACTION_PROMPTS = {
-  'fix-grammar': 'Fix errors in this text and return only the corrected version:',
-  'improve': 'Improve this text and return only the enhanced version:',
-  'professional': 'Make this text more professional and return only the modified version:',
-  'simplify': 'Simplify this text and return only the simplified version:',
-  'summarize': 'Summarize this text and return only the summary:',
-  'expand': 'Expand this text and return only the expanded version:',
-  'bullets': 'Convert this text to bullet points and return only the bullet points:',
-  'variations': 'Generate three variations of this text, labeled 1, 2, and 3:',
-  'better-way': 'Suggest a better way of saying this:',
-  'explain': 'Explain what this means:',
-  'tweet': 'Format this as a professional tweet:'
-};
-
 // ---------------------------------------------
 //            TypeScript type helpers
 // ---------------------------------------------
-type Action = keyof typeof SYSTEM_PROMPTS;
-
-interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-}
-
-interface GroqModel {
-  id: string;
-  owner: string;
-}
 
 interface CustomPrompt {
   text: string;
   type: 'system' | 'context';
 }
+
+type StoredAction = Action | 'custom';
+
+type SelectionRef = {
+  tabId: number;
+  frameId?: number;
+  selectionId?: string;
+  source: 'direct' | 'page';
+};
+
+let lastSelectionRef: SelectionRef | null = null;
+let lastResultText = '';
 
 // ---------------------------------------------
 //      DOM element helpers (typed & asserted)
@@ -144,6 +138,8 @@ function $(selector: string): HTMLElement {
 
 // Get DOM elements (now strictly typed)
 const resultDiv              = $("#result")                as HTMLDivElement;
+const copyResultButton       = $("#copyResult")           as HTMLButtonElement;
+const replaceResultButton    = $("#replaceResult")        as HTMLButtonElement;
 const directInputText        = $("#directInputText")        as HTMLTextAreaElement;
 const useAsInputCheckbox     = $("#useAsInput")             as HTMLInputElement;
 const savedPromptsSelect     = $("#savedPromptsSelect")     as HTMLSelectElement;
@@ -171,9 +167,18 @@ const buttons: Record<Action, HTMLButtonElement> = {
 };
 
 // Add new DOM elements for settings (typed)
-const apiKeyInput         = $("#apiKey")     as HTMLInputElement;
-const modelSelect         = $("#model")      as HTMLSelectElement;
-const saveSettingsButton  = $("#saveSettings") as HTMLButtonElement;
+const providerSelect     = $("#provider")   as HTMLSelectElement;
+const baseUrlInput       = $("#baseUrl")    as HTMLInputElement;
+const apiKeyInput        = $("#apiKey")     as HTMLInputElement;
+const modelSelect        = $("#modelSelect") as HTMLSelectElement;
+const modelInput         = $("#modelInput")  as HTMLInputElement;
+const saveSettingsButton = $("#saveSettings") as HTMLButtonElement;
+const autoOpenCheckbox   = $("#autoOpenPopup") as HTMLInputElement;
+const autoCopyCheckbox   = $("#autoCopyResult") as HTMLInputElement;
+const baseUrlError       = $("#baseUrlError") as HTMLDivElement;
+const apiKeyError        = $("#apiKeyError") as HTMLDivElement;
+const modelError         = $("#modelError") as HTMLDivElement;
+const settingsStatus     = $("#settingsStatus") as HTMLDivElement;
 
 // Remove options page link
 const optionsLink = document.getElementById('openOptions');
@@ -188,67 +193,169 @@ useAsInputCheckbox.addEventListener('change', () => {
 
 // Load saved settings and models using WXT Storage
 async function loadSettings() {
-  const [groqApiKey, selectedModel, customPrompts, groqModels] = await Promise.all([
+  const [
+    activeProvider,
+    providerSettings,
+    customPrompts,
+    modelsByProvider,
+    legacyGroqApiKey,
+    legacySelectedModel,
+    legacyGroqModels,
+    autoOpenPopup,
+    autoCopyResult,
+    lastResultTextStored
+  ] = await Promise.all([
+    storage.getItem<ProviderId>('sync:activeProvider'),
+    storage.getItem<ProviderSettingsMap>('sync:providerSettings'),
+    storage.getItem<Record<string, CustomPrompt>>('sync:customPrompts'),
+    storage.getItem<Record<ProviderId, LlmModel[]>>('local:modelsByProvider'),
     storage.getItem<string>('sync:groqApiKey'),
     storage.getItem<string>('sync:selectedModel'),
-    storage.getItem<Record<string, CustomPrompt>>('sync:customPrompts'),
-    storage.getItem<GroqModel[]>('local:groqModels')
+    storage.getItem<LlmModel[]>('local:groqModels'),
+    storage.getItem<boolean>('sync:autoOpenPopup'),
+    storage.getItem<boolean>('sync:autoCopyResult'),
+    storage.getItem<string>('local:lastResultText')
   ]);
 
-  if (groqApiKey) {
-    apiKeyInput.value = groqApiKey;
+  const migratedSettings: ProviderSettingsMap = providerSettings ?? {
+    groq: {},
+    openai: {},
+    'openai-compatible': {}
+  };
+
+  if (!providerSettings && (legacyGroqApiKey || legacySelectedModel)) {
+    migratedSettings.groq = {
+      apiKey: legacyGroqApiKey ?? '',
+      model: legacySelectedModel ?? ''
+    };
+    await storage.setItem('sync:providerSettings', migratedSettings);
+    await storage.setItem('sync:activeProvider', 'groq');
   }
 
-  await updateModelSelect(groqModels ?? undefined);
+  const providerId = (activeProvider ?? DEFAULT_PROVIDER) as ProviderId;
+  providerSelect.value = providerId;
 
-  if (selectedModel) {
-    modelSelect.value = selectedModel;
+  const normalizedModelsByProvider: Record<ProviderId, LlmModel[]> =
+    modelsByProvider ?? { groq: [], openai: [], 'openai-compatible': [] };
+
+  if (!modelsByProvider && legacyGroqModels) {
+    normalizedModelsByProvider.groq = legacyGroqModels;
+    await storage.setItem('local:modelsByProvider', normalizedModelsByProvider);
   }
+
+  clearSettingsFeedback();
+  applyProviderToForm(providerId, migratedSettings, normalizedModelsByProvider);
 
   if (customPrompts) {
     displaySavedPrompts(customPrompts);
     updateSavedPromptsDropdown(customPrompts);
   }
-}
 
-// Update model select options
-async function updateModelSelect(models?: GroqModel[]): Promise<void> {
-  // Keep the current selection
-  const currentSelection = modelSelect.value;
+  autoOpenCheckbox.checked = autoOpenPopup ?? true;
+  autoCopyCheckbox.checked = autoCopyResult ?? true;
 
-  // Clear existing options
-  modelSelect.innerHTML = '';
-
-  if (!models || models.length === 0) {
-    const option = document.createElement('option');
-    option.value = 'meta-llama/llama-4-maverick-17b-128e-instruct';
-    option.textContent = 'Meta Llama/llama 4 Maverick 17b 128e Instruct';
-    modelSelect.appendChild(option);
-    return;
+  if (lastResultTextStored) {
+    lastResultText = lastResultTextStored;
+    resultDiv.innerText = lastResultTextStored;
   }
 
-  models.forEach((model: GroqModel) => {
+  updateResultActions();
+}
+
+function applyProviderToForm(
+  providerId: ProviderId,
+  settings: ProviderSettingsMap,
+  modelsByProvider: Record<ProviderId, LlmModel[]>
+): void {
+  const providerSettings = settings[providerId] ?? {};
+  apiKeyInput.value = providerSettings.apiKey ?? '';
+  baseUrlInput.value = providerSettings.baseUrl ?? PROVIDERS[providerId].defaultBaseUrl;
+
+  const modelValue = providerSettings.model ?? getProviderModel(providerId, settings);
+  updateModelOptions(modelsByProvider[providerId] ?? [], modelValue);
+  modelInput.value = modelValue;
+  syncModelInputVisibility();
+}
+
+// Update model options select
+function updateModelOptions(models: LlmModel[] = [], selectedModel?: string): void {
+  const currentSelection = selectedModel ?? modelSelect.value;
+  modelSelect.innerHTML = '';
+
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = 'Select a model';
+  modelSelect.appendChild(placeholder);
+
+  models.forEach((model) => {
     const option = document.createElement('option');
     option.value = model.id;
-    const displayName = model.id
-      .split('-')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ')
-      .replace(/([0-9]+[a-z])/gi, ' $1 ')
-      .trim();
-    option.textContent = `${displayName}`;
+    option.textContent = model.id;
     modelSelect.appendChild(option);
   });
 
-  if (currentSelection && Array.from(modelSelect.options).some(opt => (opt as HTMLOptionElement).value === currentSelection)) {
+  const customOption = document.createElement('option');
+  customOption.value = '__custom__';
+  customOption.textContent = 'Custom model...';
+  modelSelect.appendChild(customOption);
+
+  if (currentSelection && Array.from(modelSelect.options).some((opt) => opt.value === currentSelection)) {
     modelSelect.value = currentSelection;
+  } else if (currentSelection) {
+    modelSelect.value = '__custom__';
+    modelInput.value = currentSelection;
+  } else {
+    modelSelect.value = models.length ? models[0].id : '__custom__';
   }
 }
 
 // Listen for model updates via storage watcher
-storage.watch<GroqModel[]>('local:groqModels', (newModels) => {
-  updateModelSelect(newModels ?? []);
+storage.watch<Record<ProviderId, LlmModel[]>>('local:modelsByProvider', (newModels) => {
+  const providerId = (providerSelect.value || DEFAULT_PROVIDER) as ProviderId;
+  updateModelOptions(newModels?.[providerId] ?? [], modelInput.value);
+  syncModelInputVisibility();
 });
+
+storage.watch<string>('local:lastResultText', (newResult) => {
+  if (!newResult) {
+    return;
+  }
+  lastResultText = newResult;
+  resultDiv.innerText = newResult;
+  updateResultActions();
+});
+
+providerSelect.addEventListener('change', async () => {
+  clearSettingsFeedback();
+  const providerId = providerSelect.value as ProviderId;
+  const settings = (await storage.getItem<ProviderSettingsMap>('sync:providerSettings')) ?? {
+    groq: {},
+    openai: {},
+    'openai-compatible': {}
+  };
+  const modelsByProvider =
+    (await storage.getItem<Record<ProviderId, LlmModel[]>>('local:modelsByProvider')) ?? {};
+  applyProviderToForm(providerId, settings, modelsByProvider);
+});
+
+modelSelect.addEventListener('change', () => {
+  if (modelSelect.value !== '__custom__' && modelSelect.value) {
+    modelInput.value = modelSelect.value;
+  }
+  syncModelInputVisibility();
+});
+
+modelInput.addEventListener('input', () => {
+  if (modelSelect.value !== '__custom__') {
+    modelSelect.value = '__custom__';
+  }
+  syncModelInputVisibility();
+});
+
+function syncModelInputVisibility(): void {
+  const shouldShow = modelSelect.value === '__custom__' || modelSelect.value === '';
+  modelInput.classList.toggle('show', shouldShow);
+}
 
 // Update saved prompts dropdown
 function updateSavedPromptsDropdown(prompts: Record<string, CustomPrompt> = {}): void {
@@ -307,8 +414,11 @@ managePromptsButton.addEventListener('click', () => {
 // Use selected prompt and process text
 useSelectedPromptButton.addEventListener('click', async () => {
   const selectedPrompt = savedPromptsSelect.value;
-  console.log('selectedPrompt', selectedPrompt);
   if (selectedPrompt) {
+    await storage.setItems([
+      { key: 'sync:lastAction', value: 'custom' satisfies StoredAction },
+      { key: 'sync:lastCustomPromptName', value: selectedPrompt }
+    ]);
     const customPrompts = await storage.getItem<Record<string, CustomPrompt>>('sync:customPrompts');
     const promptData = customPrompts?.[selectedPrompt];
     if (promptData) {
@@ -339,8 +449,20 @@ useSelectedPromptButton.addEventListener('click', async () => {
           });
         }
 
-        const result = await callGroqAPI(messages);
+        const result = await callLLM(messages);
         resultDiv.innerText = result;
+        lastResultText = result;
+        updateResultActions();
+        await storage.setItem('local:lastResultText', result);
+        const autoCopy = (await storage.getItem<boolean>('sync:autoCopyResult')) ?? true;
+        if (autoCopy) {
+          try {
+            await navigator.clipboard.writeText(result);
+            showMessage('Copied to clipboard!');
+          } catch (err) {
+            showMessage('Failed to copy result', true);
+          }
+        }
       } catch (error: any) {
         showError(error.message);
       } finally {
@@ -350,40 +472,51 @@ useSelectedPromptButton.addEventListener('click', async () => {
   }
 });
 
-// Modified API call function with better error handling
-async function callGroqAPI(messages: ChatMessage[]): Promise<string> {
-  const groqApiKey = await storage.getItem<string>('sync:groqApiKey');
-  const selectedModel = await storage.getItem<string>('sync:selectedModel');
+async function getActiveProviderConfig(): Promise<{
+  providerId: ProviderId;
+  baseUrl: string;
+  apiKey?: string;
+  model: string;
+}> {
+  const [activeProvider, providerSettings] = await Promise.all([
+    storage.getItem<ProviderId>('sync:activeProvider'),
+    storage.getItem<ProviderSettingsMap>('sync:providerSettings')
+  ]);
 
-  if (!groqApiKey) {
-    throw new Error('Please set your Groq API key in the settings');
+  const providerId = (activeProvider ?? DEFAULT_PROVIDER) as ProviderId;
+  const settings = providerSettings ?? {
+    groq: {},
+    openai: {},
+    'openai-compatible': {}
+  };
+
+  return {
+    providerId,
+    baseUrl: getProviderBaseUrl(providerId, settings),
+    apiKey: settings[providerId]?.apiKey?.trim(),
+    model: getProviderModel(providerId, settings)
+  };
+}
+
+// Modified API call function with better error handling
+async function callLLM(messages: ChatMessage[], temperature = 0.7): Promise<string> {
+  const { providerId, baseUrl, apiKey, model } = await getActiveProviderConfig();
+
+  if (PROVIDERS[providerId].requiresKey && !apiKey) {
+    throw new Error(`Please set your ${PROVIDERS[providerId].label} API key in the settings`);
   }
 
   try {
-    const response = await fetch(API_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${groqApiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: selectedModel || 'deepseek-r1-distill-llama-70b',
-        messages: messages,
-        temperature: 0.7,
-        max_tokens: 2048
-      })
+    return await callChatCompletion({
+      baseUrl,
+      apiKey,
+      model,
+      messages,
+      temperature
     });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error?.message || `API request failed (${response.status})`);
-    }
-
-    const data = await response.json();
-    return data.choices[0].message.content;
   } catch (error: any) {
     console.error('API call error:', error);
-    if (error.message.includes('authentication')) {
+    if (error.message?.toLowerCase?.().includes('authentication')) {
       throw new Error('Invalid API key. Please check your settings.');
     }
     throw new Error(`Failed to process text: ${error.message}`);
@@ -393,6 +526,7 @@ async function callGroqAPI(messages: ChatMessage[]): Promise<string> {
 // Modified button click handler
 async function handleButtonClick(action: Action): Promise<void> {
   const handleClick = async (): Promise<void> => {
+    await storage.setItem('sync:lastAction', action as StoredAction);
     setLoading(true);
     try {
       const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
@@ -412,8 +546,21 @@ async function handleButtonClick(action: Action): Promise<void> {
         }
       ];
 
-      const result = await callGroqAPI(messages);
+      const result = await callLLM(messages);
       resultDiv.innerText = result;
+      lastResultText = result;
+      updateResultActions();
+      await storage.setItem('local:lastResultText', result);
+
+      const autoCopy = (await storage.getItem<boolean>('sync:autoCopyResult')) ?? true;
+      if (autoCopy) {
+        try {
+          await navigator.clipboard.writeText(result);
+          showMessage('Copied to clipboard!');
+        } catch (err) {
+          showMessage('Failed to copy result', true);
+        }
+      }
     } catch (error: any) {
       showError(error.message);
     } finally {
@@ -431,39 +578,79 @@ Object.entries(buttons).forEach(([action, button]) => {
 
 // Modified save settings with validation
 async function saveSettings() {
+  clearSettingsFeedback();
+  const providerId = providerSelect.value as ProviderId;
   const apiKey = apiKeyInput.value.trim();
-  const model = modelSelect.value;
+  const baseUrl = baseUrlInput.value.trim() || PROVIDERS[providerId].defaultBaseUrl;
+  const chosenModel =
+    modelSelect.value && modelSelect.value !== '__custom__'
+      ? modelSelect.value
+      : modelInput.value.trim();
+  const model = chosenModel || PROVIDERS[providerId].defaultModel;
 
-  if (!apiKey) {
-    showError('API key is required');
+  baseUrlInput.value = baseUrl;
+  modelInput.value = model;
+
+  if (PROVIDERS[providerId].requiresKey && !apiKey) {
+    setFieldError(apiKeyError, `${PROVIDERS[providerId].label} API key is required`);
+    return;
+  }
+
+  if (!model) {
+    setFieldError(modelError, 'Model ID is required');
     return;
   }
 
   setLoading(true);
   try {
-    // Validate API key by making a test request
-    const response = await fetch('https://api.groq.com/openai/v1/models', {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
+    let fetchedModels: LlmModel[] | null = null;
+    try {
+      fetchedModels = await fetchModels(baseUrl, apiKey);
+      if (fetchedModels.length === 0) {
+        setSettingsStatus('No models returned. You can type a custom model ID.', true);
       }
-    });
-
-    if (!response.ok) {
-      throw new Error('Invalid API key');
+    } catch (err: any) {
+      const message = err?.message || 'Model list fetch failed';
+      const statusMatch = message.match(/\((\d{3})\)/);
+      const statusCode = statusMatch ? Number(statusMatch[1]) : null;
+      if (statusCode === 401 || statusCode === 403) {
+        setFieldError(apiKeyError, 'API key rejected by provider.');
+      } else if (statusCode === 404) {
+        setFieldError(baseUrlError, 'Base URL not found.');
+      } else {
+        setSettingsStatus(`Model list fetch failed: ${message}`, true);
+      }
     }
 
+    const providerSettings =
+      (await storage.getItem<ProviderSettingsMap>('sync:providerSettings')) ?? {
+        groq: {},
+        openai: {},
+        'openai-compatible': {}
+      };
+
+    providerSettings[providerId] = { apiKey, baseUrl, model };
+
     await storage.setItems([
-      { key: 'sync:groqApiKey', value: apiKey },
-      { key: 'sync:selectedModel', value: model }
+      { key: 'sync:providerSettings', value: providerSettings },
+      { key: 'sync:activeProvider', value: providerId },
+      { key: 'sync:autoOpenPopup', value: autoOpenCheckbox.checked },
+      { key: 'sync:autoCopyResult', value: autoCopyCheckbox.checked }
     ]);
+
+    if (fetchedModels) {
+      const modelsByProvider =
+        (await storage.getItem<Record<ProviderId, LlmModel[]>>('local:modelsByProvider')) ?? {};
+      modelsByProvider[providerId] = fetchedModels;
+      await storage.setItem('local:modelsByProvider', modelsByProvider);
+    }
 
     // Explicitly request a model update
     await browser.runtime.sendMessage({ action: 'updateModels' });
 
-    showMessage('Settings saved successfully!');
+    setSettingsStatus('Settings saved.', false);
   } catch (error: any) {
-    showError(`Failed to save settings: ${error.message}`);
+    setSettingsStatus(`Failed to save settings: ${error.message}`, true);
   } finally {
     setLoading(false);
   }
@@ -508,12 +695,146 @@ function setLoading(isLoading: boolean): void {
   });
   if (isLoading) {
     resultDiv.innerHTML = '<div class="loading">Processing...</div>';
+    copyResultButton.disabled = true;
+    replaceResultButton.disabled = true;
+  } else {
+    updateResultActions();
   }
 }
 
+copyResultButton.addEventListener('click', async () => {
+  if (!lastResultText.trim()) {
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(lastResultText);
+    showMessage('Copied to clipboard!');
+  } catch (err) {
+    console.error('Failed to copy result', err);
+    showMessage('Failed to copy result', true);
+  }
+});
+
+replaceResultButton.addEventListener('click', async () => {
+  if (!lastSelectionRef || lastSelectionRef.source !== 'page' || !lastSelectionRef.selectionId) {
+    showMessage('Select text in the page first', true);
+    return;
+  }
+  if (!lastResultText.trim()) {
+    return;
+  }
+  try {
+    await browser.tabs.sendMessage(
+      lastSelectionRef.tabId,
+      { action: 'applyReplacement', selectionId: lastSelectionRef.selectionId, text: lastResultText },
+      lastSelectionRef.frameId !== undefined ? { frameId: lastSelectionRef.frameId } : undefined
+    );
+    showMessage('Replaced selection!');
+  } catch (err) {
+    console.error('Failed to replace selection', err);
+    showMessage('Failed to replace selection', true);
+  }
+});
+
 // Helper function to show error
 function showError(message: string): void {
-  resultDiv.innerHTML = `<div class="error">${message}</div>`;
+  resultDiv.innerHTML = '';
+  const div = document.createElement('div');
+  div.className = 'error';
+  div.innerText = message;
+  resultDiv.appendChild(div);
+  lastResultText = '';
+  void storage.setItem('local:lastResultText', '');
+  updateResultActions();
+}
+
+function clearSettingsFeedback(): void {
+  baseUrlError.textContent = '';
+  apiKeyError.textContent = '';
+  modelError.textContent = '';
+  settingsStatus.textContent = '';
+  settingsStatus.classList.remove('error', 'success');
+}
+
+function setFieldError(element: HTMLDivElement, message?: string): void {
+  element.textContent = message ?? '';
+  element.classList.toggle('show', Boolean(message));
+}
+
+function setSettingsStatus(message: string, isError = false): void {
+  settingsStatus.textContent = message;
+  settingsStatus.classList.toggle('error', isError);
+  settingsStatus.classList.toggle('success', !isError);
+}
+
+function updateResultActions(): void {
+  const hasResult = lastResultText.trim().length > 0;
+  copyResultButton.disabled = !hasResult;
+  const canReplace =
+    hasResult &&
+    lastSelectionRef?.source === 'page' &&
+    Boolean(lastSelectionRef.selectionId);
+  replaceResultButton.disabled = !canReplace;
+}
+
+async function ensureContentScript(tabId: number): Promise<void> {
+  await browser.scripting.executeScript({
+    target: { tabId, allFrames: true },
+    files: ['content-scripts/content.js']
+  });
+}
+
+async function findSelectionInFrames(tabId: number): Promise<SelectionRef | null> {
+  try {
+    await ensureContentScript(tabId);
+  } catch (err) {
+    console.error('Failed to inject content script', err);
+  }
+
+  const frames = await browser.webNavigation.getAllFrames({ tabId });
+  for (const frame of frames) {
+    try {
+      const selection = await browser.tabs.sendMessage(
+        tabId,
+        { action: 'getEditableSelection' },
+        { frameId: frame.frameId }
+      );
+      if (selection?.selectionId) {
+        return {
+          tabId,
+          frameId: frame.frameId,
+          selectionId: selection.selectionId,
+          source: 'page'
+        };
+      }
+    } catch (err) {
+      if (String((err as Error)?.message || err).includes('Receiving end does not exist')) {
+        continue;
+      }
+      console.error('Failed to read selection', err);
+    }
+  }
+
+  return null;
+}
+
+async function getPlainSelectionText(tabId: number): Promise<{ text: string; frameId?: number } | null> {
+  try {
+    const results = await browser.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: () => (window.getSelection?.()?.toString() ?? '')
+    });
+    const best = results
+      .map((result) => ({
+        frameId: result.frameId,
+        text: (result.result ?? '').toString()
+      }))
+      .find((entry) => entry.text.trim().length > 0);
+    return best ?? null;
+  } catch (err) {
+    console.error('Failed to read plain selection', err);
+    return null;
+  }
 }
 
 // Fetch selected text either from direct input or via injected script on the active tab
@@ -524,20 +845,45 @@ async function getSelectedText(tab: Browser.tabs.Tab): Promise<string> {
     if (!directInput) {
       throw new Error('Please enter text in the input box when using direct input mode');
     }
+    lastSelectionRef = {
+      tabId: tab.id!,
+      source: 'direct'
+    };
     return directInput;
   }
 
-  // Execute script in the page context to obtain the selection
-  try {
-    const [{ result: selected }] = await browser.scripting.executeScript({
-      target: { tabId: tab.id! },
-      func: () => (window.getSelection?.()?.toString() ?? '')
-    });
+  if (!tab.id) {
+    throw new Error('No active tab found');
+  }
 
-    if (!selected) {
-      throw new Error('Please select some text first');
+  const plainSelection = await getPlainSelectionText(tab.id);
+  if (plainSelection?.text?.trim()) {
+    lastSelectionRef = {
+      tabId: tab.id,
+      frameId: plainSelection.frameId,
+      source: 'page'
+    };
+    return plainSelection.text;
+  }
+
+  const selectionRef = await findSelectionInFrames(tab.id);
+  if (!selectionRef) {
+    throw new Error('Please select some text or focus an editable field first');
+  }
+
+  lastSelectionRef = selectionRef;
+
+  try {
+    const selection = await browser.tabs.sendMessage(
+      tab.id,
+      { action: 'getEditableSelection' },
+      { frameId: selectionRef.frameId }
+    );
+    const text = selection?.text?.toString?.() ?? '';
+    if (!text.trim()) {
+      throw new Error('Editable field is empty');
     }
-    return selected;
+    return text;
   } catch (err: any) {
     console.error('Failed to retrieve selected text:', err);
     throw new Error('Unable to access selected text. Please refresh the page and try again.');
